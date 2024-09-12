@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Reconocimiento de Voz</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+        }
+        h1 {
+            color: #333;
+            margin-top: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .phrase {
+            font-size: 1.2em;
+            color: #555;
+            margin: 20px 0;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: background-color 0.3s ease;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+        }
+        #responseText {
+            font-size: 1.1em;
+            color: #555;
+            margin-top: 20px;
+        }
+        #retry {
+            display: none;
+            background-color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Reconocimiento de Voz</h1>
+        <p class="phrase">Por favor, diga la siguiente frase para la grabación:</p>
+        <p><strong id="currentPhrase">"es un gusto tenerlo en crea"</strong></p>
+        
+        <button id="startRecording">Iniciar Grabación</button>
+        <button id="stopRecording" disabled>Detener Grabación</button>
+        <button id="retry">Reintentar</button>
+        
+        <p id="recognizedText">Texto reconocido: <span id="recognizedResult"></span></p>
+        <p id="responseText"></p>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let currentEtapa = 1;
+
+        // Iniciar la grabación
+        $("#startRecording").click(function() {
+            audioChunks = [];
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.start();
+
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+
+                    $("#startRecording").prop("disabled", true);
+                    $("#stopRecording").prop("disabled", false);
+                    $("#retry").hide();
+                });
+        });
+
+        // Detener la grabación
+        $("#stopRecording").click(function() {
+            mediaRecorder.stop();
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.wav');
+
+                $.ajax({
+                    url: '/record',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $("#recognizedResult").text(response.text);
+                        $("#responseText").text(response.response);
+                        if (response.continuar) {
+                            $("#retry").hide();
+                            currentEtapa = response.etapa;  // Actualizar la etapa actual
+                            $("#currentPhrase").text(response.response.split("Por favor, diga la siguiente frase: ")[1]);
+                        } else {
+                            $("#retry").show();
+                        }
+                    },
+                    error: function(error) {
+                        $("#responseText").text("Error al procesar el audio: " + error.responseJSON.error);
+                    }
+                });
+
+                $("#startRecording").prop("disabled", false);
+                $("#stopRecording").prop("disabled", true);
+            };
+        });
+
+        // Reintentar la grabación
+        $("#retry").click(function() {
+            $("#recognizedResult").text('');
+            $("#responseText").text('');
+            $("#startRecording").click();
+        });
+    </script>
+</body>
+</html>
